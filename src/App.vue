@@ -1,6 +1,6 @@
 <template>
-  <Nav :coords="coords" />
-  <Draw @move="move" />
+  <Nav :coords="coords" :scale="scale" />
+  <Draw @move="move" @scale="onScale" />
 </template>
 
 <script>
@@ -23,10 +23,16 @@ export default {
         coords.value = null
       }
     }
+    const scale = ref(1)
+    const onScale = (val) => {
+      scale.value = val
+    }
 
     return {
       coords,
       move,
+      scale,
+      onScale,
     }
   }
 }
@@ -46,7 +52,7 @@ export default {
   --purple: #6c00ff;
 }
 body {
-  background-color: var(--psd-light-gray);
+  background-color: var(--psd-lightest-gray);
   color: var(--psd-darkest-gray);
   margin: 0;
   font-family: 'Atkinson Hyperlegible', sans-serif;
@@ -71,5 +77,10 @@ body {
 }
 .ml-auto {
   margin-left: auto;
+}
+
+.transparency-checkerboard {
+  background-color: #ff00ff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 2 2'%3E%3Crect x='0' y='0' width='1' height='1' fill='%23fff'/%3E%3Crect x='1' y='0' width='1' height='1' fill='%23eee'/%3E%3Crect x='0' y='1' width='1' height='1' fill='%23eee'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23fff'/%3E%3C/svg%3E");
 }
 </style>

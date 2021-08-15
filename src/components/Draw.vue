@@ -1,51 +1,33 @@
 <template>
-  <div class="playdate">
-    <div class="playdate-bezel">
-      <div class="canvas-container" @mousemove="point" @mouseleave="point">
-        <template v-for="layer in layers" :key="layer.id">
-          <canvas
-            :ref="el => setCanvasRef(el, layer.id)"
-            :width="width"
-            :height="height"
-            :style="{
-              zIndex: layer.index,
-            }"
-          />
-        </template>
-      </div>
-    </div>
+  <div
+    class="canvas-container transparency-checkerboard"
+    @mousemove="mouse"
+    @mouseleave="mouse"
+    :style="{
+      width: displayWidth + 'px',
+      height: displayHeight + 'px',
+    }"
+  >
+    <canvas
+      v-for="layer in layers"
+      :key="layer.id"
+      :ref="el => setCanvasRef(el, layer.id)"
+      :width="displayWidth"
+      :height="displayHeight"
+      :style="{
+        zIndex: layer.index,
+      }"
+    />
   </div>
-  <div class="layers">
-    <ol>
-      <li
-        v-for="layer in sortedLayers"
-        :key="layer.id"
-        class="flex items-center"
-        @click="currentLayer = layer.id"
-      >
-        <canvas
-          :ref="el => setLayerCanvasRef(el, layer.id)"
-          :width="width"
-          :height="height"
-          class="layer-preview"
-        />
-        <div>
-          {{ layer.name }}
-          <span class="current" v-if="layer.id === currentLayer">
-            (current)
-          </span>
-        </div>
-      </li>
-    </ol>
-    <button @click="newLayer">New layer</button>
-  </div>
+  <button @click="preview = true">Preview</button>
+  <Layers :layers="layers" v-model="currentLayer" @add="newLayer" />
+  <Preview :layers="layers" v-if="preview" @close="preview = false" />
 </template>
 
 <script>
-import { sortBy } from 'lodash'
-
-const width = 400
-const height = 240
+import Layers from './Layers.vue'
+import Preview from './Preview.vue'
+import { width, height } from '../constants'
 
 const white = '#b1afa8'
 const black = '#312f28'
@@ -54,18 +36,26 @@ let lastId = 0
 
 export default {
   name: 'Draw',
-  emits: ['move'],
+  components: {
+    Layers,
+    Preview,
+  },
+  emits: ['move', 'scale'],
   data: () => ({
     currentLayer: null,
     layers: {},
     canvases: {},
-    layerCanvases: {},
+    preview: false,
     width,
     height,
+    scale: 1,
   }),
   computed: {
-    sortedLayers() {
-      return sortBy(this.layers, layer => layer.index)
+    displayWidth() {
+      return this.width * this.scale
+    },
+    displayHeight() {
+      return this.height * this.scale
     },
   },
   methods: {
@@ -74,47 +64,46 @@ export default {
         this.canvases[id] = el
       }
     },
-    setLayerCanvasRef(el, id) {
-      if (el) {
-        this.layerCanvases[id] = el
-      }
-    },
     render(id) {
-      // Render full size canvas
       const canvas = this.canvases[id]
       if (!canvas) {
         console.warn(`Can't find canvas for layer ${id}`)
         return
       }
 
-      const { data } = this.layers[id]
-
       const ctx = canvas.getContext('2d')
       ctx.clearRect(0, 0, canvas.width, canvas.height)
+      const { data } = this.layers[id]
       if (data) {
-        ctx.putImageData(data, 0, 0)
-      }
+        if (this.scale > 1) {
+          const img = new Image()
+          img.onload = () => {
+            ctx.imageSmoothingEnabled = false
+            ctx.scale(this.scale, this.scale)
+            ctx.drawImage(img, 0, 0)
+            ctx.setTransform(1, 0, 0, 1, 0, 0)
+          }
 
-      // Render preview image
-      const layerCanvas = this.layerCanvases[id]
-      if (!layerCanvas) {
-        return
-      }
-      const ctx2 = layerCanvas.getContext('2d')
-      ctx2.clearRect(0, 0, layerCanvas.width, layerCanvas.height)
-      if (data) {
-        ctx2.putImageData(data, 0, 0)
+          const canvas2 = document.createElement('canvas')
+          canvas2.width = width
+          canvas2.height = height
+          const ctx2 = canvas2.getContext('2d')
+          ctx2.putImageData(data, 0, 0)
+          img.src = canvas2.toDataURL()
+        } else {
+          ctx.scale(1, 1)
+          ctx.putImageData(data, 0, 0)
+        }
       }
     },
     newLayer() {
-      const data = new ImageData(width, height)
       lastId += 1
       this.layers[lastId] = {
         id: lastId,
         index: Object.keys(this.layers).length,
         name: `Layer ${lastId}`,
         visible: true,
-        data,
+        data: new ImageData(width, height),
       }
       this.currentLayer = lastId
       return lastId
@@ -124,7 +113,7 @@ export default {
       return this.layers[id].data = data
     },
     draw(id, callback) {
-      const canvas = document.createElement("canvas")
+      const canvas = document.createElement('canvas')
       canvas.width = width
       canvas.height = height
       const ctx = canvas.getContext('2d')
@@ -147,15 +136,21 @@ export default {
         ctx.strokeRect(x, y, w, h)
       })
     },
-    point(e) {
+    mouse(e) {
       if (e.type === 'mousemove') {
-        this.$emit('move', e.offsetX, e.offsetY)
+        const x = Math.floor(e.offsetX / this.scale)
+        const y = Math.floor(e.offsetY / this.scale)
+        this.$emit('move', x, y)
         if (e.buttons === 1) {
-          this.rect(this.currentLayer, e.offsetX, e.offsetY, 1, 1, white)
+          this.rect(this.currentLayer, x, y, 1, 1, white)
         }
       } else {
         this.$emit('move', null, null)
       }
+    },
+    resize() {
+      this.scale = Math.floor((window.innerWidth - 32) / width)
+      this.$emit('scale', this.scale)
     },
   },
   watch: {
@@ -170,7 +165,6 @@ export default {
   },
   beforeUpdate() {
     this.canvases = {}
-    this.layerCanvases = {}
   },
   mounted() {
     const id = this.newLayer()
@@ -179,55 +173,18 @@ export default {
       this.rect(id, 20, 20, 20, 20, black)
       this.outlineRect(id, 30.5, 30.5, 20, 20, white, 1)
     })
+    window.addEventListener('resize', this.resize)
+    this.resize()
   },
 }
 </script>
 
 <style scoped>
-.playdate {
-  font-size: 16px;
-  display: inline-block;
-  margin: 1em;
-  background-color: var(--device-yellow);
-  border-radius: 0.5em;
-  padding-top: 0.5em;
-  padding-left: 0.5em;
-  padding-right: 2em;
-  padding-bottom: 14em;
-}
-.playdate-bezel {
-  padding: 0.5rem;
-  background-color: var(--psd-darkest-gray);
-  border-radius: 0.25rem;
-}
 .canvas-container {
   position: relative;
-  width: 25em;
-  height: 15em;
-  background-color: var(--screen-black);
+  margin: 1rem;
 }
 .canvas-container > canvas {
   position: absolute;
-}
-
-.layers {
-  margin: 1rem;
-}
-.layers ol {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.layers li {
-  margin-bottom: 2px;
-}
-.layer-preview {
-  width: 60px;
-  height: 36px;
-  margin-right: 1rem;
-  background-color: var(--screen-black);
-}
-.layers .current {
-  color: var(--yellow);
 }
 </style>
